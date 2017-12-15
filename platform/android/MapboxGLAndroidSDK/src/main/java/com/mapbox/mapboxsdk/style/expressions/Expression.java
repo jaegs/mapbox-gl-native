@@ -46,41 +46,95 @@ import java.util.List;
  * a combination of the zoom level and individual feature properties.
  * </p>
  */
-public class Expression {
+public class Expression<T> {
 
-  private final String operator;
-  private final Object[] arguments;
+  private String operator;
+  private Expression[] arguments;
+
+  Expression() {
+  }
 
   /**
-   * Creates an expression from its operator and varargs objects.
+   * Creates an expression from its operator and varargs expressions.
    *
-   * @param operator the expression operator
-   * @param arguments varargs to provide expressions and values
+   * @param operator  the expression operator
+   * @param arguments expressions input
    */
-  public Expression(@NonNull String operator, @Nullable Object... arguments) {
+  public Expression(@NonNull String operator, @Nullable Expression... arguments) {
     this.operator = operator;
     this.arguments = arguments;
   }
 
   /**
    * Converts the expression to Object array representation.
+   * <p>
+   * The output will later be converted to a JSON Object array.
+   * </p>
    *
-   * @return the converted expression
+   * @return the converted object array expression
    */
   @NonNull
   public Object[] toArray() {
     List<Object> array = new ArrayList<>();
     array.add(operator);
     if (arguments != null) {
-      for (Object o : arguments) {
-        if (o instanceof Expression) {
-          array.add(((Expression) o).toArray());
+      for (Expression argument : arguments) {
+        if (argument instanceof ExpressionValue) {
+          array.add(toValue((ExpressionValue) argument));
         } else {
-          array.add(o);
+          array.add(argument.toArray());
         }
       }
     }
     return array.toArray();
+  }
+
+  /**
+   * Converts the expression value to an Object.
+   *
+   * @param expressionValue the expression value to convert
+   * @return the converted object expression
+   */
+  private Object toValue(ExpressionValue expressionValue) {
+    Object value = expressionValue.toValue();
+    if (value instanceof ExpressionValue) {
+      return toValue((ExpressionValue) value);
+    } else if (value instanceof Expression) {
+      return ((Expression) value).toArray();
+    }
+    return value;
+  }
+
+  /**
+   * ExpressionValue wraps an object to be used as literals in an expression.
+   * <p>
+   * ExpressionValue are created with {@link #literal(Number)}, {@link #literal(Boolean)},
+   * {@link #literal(String)} and {@link #literal(Object)}.
+   * </p>
+   *
+   * @param <T>
+   */
+  private static class ExpressionValue<T> extends Expression<T> {
+
+    private Object object;
+
+    /**
+     * Create an ExpressionValue wrapper.
+     *
+     * @param object the object to be wrapped
+     */
+    ExpressionValue(Object object) {
+      this.object = object;
+    }
+
+    /**
+     * Get the wrapped object.
+     *
+     * @return the wrapped object
+     */
+    Object toValue() {
+      return object;
+    }
   }
 
   //
@@ -94,11 +148,13 @@ public class Expression {
    * If any component is out of range, the expression is an error.
    * </p>
    *
-   * @param expressions a color expression
+   * @param red   red color expression
+   * @param green green color expression
+   * @param blue  blue color expression
    * @return expression
    */
-  public static Expression rgb(Object... expressions) {
-    return new Expression("rgb", expressions);
+  public static Expression<Color> rgb(Expression<Number> red, Expression<Number> green, Expression<Number> blue) {
+    return new Expression<>("rgb", red, green, blue);
   }
 
   /**
@@ -113,22 +169,8 @@ public class Expression {
    * @param blue  blue color value
    * @return expression
    */
-  public static Expression rgb(Number red, Number green, Number blue) {
-    return new Expression("rgb", red, green, blue);
-  }
-
-  /**
-   * Creates a color value from red, green, blue components, which must range between 0 and 255,
-   * and an alpha component which must range between 0 and 1.
-   * <p>
-   * If any component is out of range, the expression is an error.
-   * </p>
-   *
-   * @param expression a color expression
-   * @return expression
-   */
-  public static Expression rgba(Expression expression) {
-    return new Expression("rgba", expression);
+  public static Expression<Color> rgb(Number red, Number green, Number blue) {
+    return rgb(literal(red), literal(green), literal(blue));
   }
 
   /**
@@ -144,8 +186,25 @@ public class Expression {
    * @param alpha alpha color value
    * @return expression
    */
-  public static Expression rgba(Number red, Number green, Number blue, Number alpha) {
-    return new Expression("rgba", red, green, blue, alpha);
+  public static Expression<Color> rgba(Expression<Number> red, Expression<Number> green, Expression<Number> blue, Expression<Number> alpha) {
+    return new Expression<>("rgba", red, green, blue, alpha);
+  }
+
+  /**
+   * Creates a color value from red, green, blue components, which must range between 0 and 255,
+   * and an alpha component which must range between 0 and 1.
+   * <p>
+   * If any component is out of range, the expression is an error.
+   * </p>
+   *
+   * @param red   red color value
+   * @param green green color value
+   * @param blue  blue color value
+   * @param alpha alpha color value
+   * @return expression
+   */
+  public static Expression<Color> rgba(Number red, Number green, Number blue, Number alpha) {
+    return rgba(literal(red), literal(green), literal(blue), literal(alpha));
   }
 
   /**
@@ -154,28 +213,8 @@ public class Expression {
    * @param expression an expression to convert to a color
    * @return expression
    */
-  public static Expression toRgba(Expression expression) {
-    return new Expression("to-rgba", expression);
-  }
-
-  /**
-   * Returns a four-element array containing the input color's red, green, blue, and alpha components, in that order.
-   *
-   * @param color a color string value
-   * @return expression
-   */
-  public static Expression toRgba(String color) {
-    return new Expression("to-rgba", color);
-  }
-
-  /**
-   * Returns a four-element array containing the input color's red, green, blue, and alpha components, in that order.
-   *
-   * @param color a color int value
-   * @return expression
-   */
-  public static Expression toRgba(@ColorInt int color) {
-    return new Expression("to-rgba", color(color));
+  public static Expression toRgba(Expression<Color> expression) {
+    return new Expression<>("to-rgba", expression);
   }
 
   //
@@ -183,222 +222,229 @@ public class Expression {
   //
 
   /**
-   * Returns `true` if the input values are equal, `false` otherwise.
+   * Returns true if the input values are equal, false otherwise.
    * The inputs must be numbers, strings, or booleans, and both of the same type.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param compareOne the first expression
+   * @param compareTwo the second expression
    * @return expression
    */
-  public static Expression eq(Object... expressions) {
-    return new Expression("==", expressions);
+  public static Expression<Boolean> eq(Expression compareOne, Expression compareTwo) {
+    return new Expression<>("==", compareOne, compareTwo);
   }
 
   /**
-   * Returns `true` if the input values are equal, `false` otherwise.
-   *
-   * @param compareOne the first number
-   * @param compareTwo the second number
-   * @return expression
-   */
-  public static Expression eq(Number compareOne, Number compareTwo) {
-    return new Expression("==", compareOne, compareTwo);
-  }
-
-  /**
-   * Returns `true` if the input values are equal, `false` otherwise.
-   *
-   * @param compareOne the first string
-   * @param compareTwo the second string
-   * @return expression
-   */
-  public static Expression eq(String compareOne, String compareTwo) {
-    return new Expression("==", compareOne, compareTwo);
-  }
-
-  /**
-   * Returns `true` if the input values are equal, `false` otherwise.
+   * Returns true if the input values are equal, false otherwise.
    *
    * @param compareOne the first boolean
    * @param compareTwo the second boolean
    * @return expression
    */
-  public static Expression eq(Boolean compareOne, Boolean compareTwo) {
-    return new Expression("==", compareOne, compareTwo);
+  public static Expression<Boolean> eq(Boolean compareOne, Boolean compareTwo) {
+    return eq(literal(compareOne), literal(compareTwo));
   }
 
   /**
-   * Returns `true` if the input values are not equal, `false` otherwise.
-   * The inputs must be numbers, strings, or booleans, and both of the same type.
-   *
-   * @param expressions varargs to provide expressions and values
-   * @return expression
-   */
-  public static Expression neq(Object... expressions) {
-    return new Expression("!=", expressions);
-  }
-
-  /**
-   * Returns `true` if the input values are not equal, `false` otherwise.
+   * Returns true if the input values are equal, false otherwise.
    *
    * @param compareOne the first number
    * @param compareTwo the second number
    * @return expression
    */
-  public static Expression neq(Number compareOne, Number compareTwo) {
-    return new Expression("!=", compareOne, compareTwo);
+  public static Expression<Boolean> eq(String compareOne, String compareTwo) {
+    return eq(literal(compareOne), literal(compareTwo));
   }
 
   /**
-   * Returns `true` if the input values are not equal, `false` otherwise.
+   * Returns true if the input values are equal, false otherwise.
    *
-   * @param compareOne the first string
-   * @param compareTwo the second string
+   * @param compareOne the first number
+   * @param compareTwo the second number
    * @return expression
    */
-  public static Expression neq(String compareOne, String compareTwo) {
-    return new Expression("!=", compareOne, compareTwo);
+  public static Expression<Boolean> eq(Number compareOne, Number compareTwo) {
+    return eq(literal(compareOne), literal(compareTwo));
   }
 
   /**
-   * Returns `true` if the input values are not equal, `false` otherwise.
+   * Returns true if the input values are not equal, false otherwise.
+   * The inputs must be numbers, strings, or booleans, and both of the same type.
+   *
+   * @param compareOne the first expression
+   * @param compareTwo the second expression
+   * @return expression
+   */
+  public static Expression<Boolean> neq(Expression compareOne, Expression compareTwo) {
+    return new Expression<>("!=", compareOne, compareTwo);
+  }
+
+  /**
+   * Returns true if the input values are equal, false otherwise.
    *
    * @param compareOne the first boolean
    * @param compareTwo the second boolean
    * @return expression
    */
-  public static Expression neq(Boolean compareOne, Boolean compareTwo) {
-    return new Expression("!=", compareOne, compareTwo);
+  public static Expression<Boolean> neq(Boolean compareOne, Boolean compareTwo) {
+    return new Expression<>("!=", literal(compareOne), literal(compareTwo));
   }
 
   /**
-   * Returns `true` if the first input is strictly greater than the second, `false` otherwise.
+   * Returns `true` if the input values are not equal, `false` otherwise.
+   *
+   * @param compareOne the first string
+   * @param compareTwo the second string
+   * @return expression
+   */
+  public static Expression<Boolean> neq(String compareOne, String compareTwo) {
+    return new Expression<>("!=", literal(compareOne), literal(compareTwo));
+  }
+
+  /**
+   * Returns `true` if the input values are not equal, `false` otherwise.
+   *
+   * @param compareOne the first number
+   * @param compareTwo the second number
+   * @return expression
+   */
+  public static Expression<Boolean> neq(Number compareOne, Number compareTwo) {
+    return new Expression<>("!=", literal(compareOne), literal(compareTwo));
+  }
+
+  /**
+   * Returns true if the first input is strictly greater than the second, false otherwise.
    * The inputs must be numbers or strings, and both of the same type.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param compareOne the first expression
+   * @param compareTwo the second expression
    * @return expression
    */
-  public static Expression gt(Object... expressions) {
-    return new Expression(">", expressions);
+  public static Expression<Boolean> gt(Expression compareOne, Expression compareTwo) {
+    return new Expression<>(">", compareOne, compareTwo);
   }
 
   /**
-   * Returns `true` if the first input is strictly greater than the second, `false` otherwise.
+   * Returns true if the first input is strictly greater than the second, false otherwise.
    *
    * @param compareOne the first number
    * @param compareTwo the second number
    * @return expression
    */
-  public static Expression gt(Number compareOne, Number compareTwo) {
-    return new Expression(">", compareOne, compareTwo);
+  public static Expression<Boolean> gt(Number compareOne, Number compareTwo) {
+    return new Expression<>(">", literal(compareOne), literal(compareTwo));
   }
 
   /**
-   * Returns `true` if the first input is strictly greater than the second, `false` otherwise.
+   * Returns true if the first input is strictly greater than the second, false otherwise.
    *
    * @param compareOne the first string
    * @param compareTwo the second string
    * @return expression
    */
-  public static Expression gt(String compareOne, String compareTwo) {
-    return new Expression(">", compareOne, compareTwo);
+  public static Expression<Boolean> gt(String compareOne, String compareTwo) {
+    return new Expression<>(">", literal(compareOne), literal(compareTwo));
   }
 
   /**
-   * Returns `true` if the first input is strictly less than the second, `false` otherwise.
-   *
-   * @param expressions varargs to provide expressions and values
-   * @return expression
-   */
-  public static Expression lt(Object... expressions) {
-    return new Expression("<", expressions);
-  }
-
-  /**
-   * Returns `true` if the first input is strictly less than the second, `false` otherwise.
-   *
-   * @param compareOne the first number
-   * @param compareTwo the second number
-   * @return expression
-   */
-  public static Expression lt(Number compareOne, Number compareTwo) {
-    return new Expression("<", compareOne, compareTwo);
-  }
-
-  /**
-   * Returns `true` if the first input is strictly less than the second, `false` otherwise.
-   *
-   * @param compareOne the first string
-   * @param compareTwo the second string
-   * @return expression
-   */
-  public static Expression lt(String compareOne, String compareTwo) {
-    return new Expression("<", compareOne, compareTwo);
-  }
-
-  /**
-   * Returns `true` if the first input is greater than or equal to the second, `false` otherwise.
+   * Returns true if the first input is strictly less than the second, false otherwise.
    * The inputs must be numbers or strings, and both of the same type.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param compareOne the first number
+   * @param compareTwo the second number
    * @return expression
    */
-  public static Expression gte(Object... expressions) {
-    return new Expression(">=", expressions);
+  public static Expression<Boolean> lt(Expression compareOne, Expression compareTwo) {
+    return new Expression<>("<", compareOne, compareTwo);
   }
 
   /**
-   * Returns `true` if the first input is greater than or equal to the second, `false` otherwise..
+   * Returns true if the first input is strictly less than the second, false otherwise.
    *
    * @param compareOne the first number
    * @param compareTwo the second number
    * @return expression
    */
-  public static Expression gte(Number compareOne, Number compareTwo) {
-    return new Expression(">=", compareOne, compareTwo);
+  public static Expression<Boolean> lt(Number compareOne, Number compareTwo) {
+    return new Expression<>("<", literal(compareOne), literal(compareTwo));
   }
 
   /**
-   * Returns `true` if the first input is greater than or equal to the second, `false` otherwise.
+   * Returns true if the first input is strictly less than the second, false otherwise.
    *
    * @param compareOne the first string
    * @param compareTwo the second string
    * @return expression
    */
-  public static Expression gte(String compareOne, String compareTwo) {
-    return new Expression(">=", compareOne, compareTwo);
+  public static Expression<Boolean> lt(String compareOne, String compareTwo) {
+    return new Expression<>("<", literal(compareOne), literal(compareTwo));
   }
 
   /**
-   * Returns `true` if the first input is less than or equal to the second, `false` otherwise.
+   * Returns true if the first input is greater than or equal to the second, false otherwise.
    * The inputs must be numbers or strings, and both of the same type.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param compareOne the first expression
+   * @param compareTwo the second expression
    * @return expression
    */
-  public static Expression lte(Object... expressions) {
-    return new Expression("<=", expressions);
+  public static Expression<Boolean> gte(Expression compareOne, Expression compareTwo) {
+    return new Expression<>(">=", compareOne, compareTwo);
   }
 
   /**
-   * Returns `true` if the first input is less than or equal to the second, `false` otherwise.
+   * Returns true if the first input is greater than or equal to the second, false otherwise.
    *
    * @param compareOne the first number
    * @param compareTwo the second number
    * @return expression
    */
-  public static Expression lte(Number compareOne, Number compareTwo) {
-    return new Expression("<=", compareOne, compareTwo);
+  public static Expression<Boolean> gte(Number compareOne, Number compareTwo) {
+    return new Expression<>(">=", literal(compareOne), literal(compareTwo));
   }
 
   /**
-   * Returns `true` if the first input is less than or equal to the second, `false` otherwise.
+   * Returns true if the first input is greater than or equal to the second, false otherwise.
    *
    * @param compareOne the first string
    * @param compareTwo the second string
    * @return expression
    */
-  public static Expression lte(String compareOne, String compareTwo) {
-    return new Expression("<=", compareOne, compareTwo);
+  public static Expression<Boolean> gte(String compareOne, String compareTwo) {
+    return new Expression<>(">=", literal(compareOne), literal(compareTwo));
+  }
+
+  /**
+   * Returns true if the first input is less than or equal to the second, false otherwise.
+   * The inputs must be numbers or strings, and both of the same type.
+   *
+   * @param compareOne the first expression
+   * @param compareTwo the second expression
+   * @return expression
+   */
+  public static Expression<Boolean> lte(Expression compareOne, Expression compareTwo) {
+    return new Expression<>("<=", compareOne, compareTwo);
+  }
+
+  /**
+   * Returns true if the first input is less than or equal to the second, false otherwise.
+   *
+   * @param compareOne the first number
+   * @param compareTwo the second number
+   * @return expression
+   */
+  public static Expression<Boolean> lte(Number compareOne, Number compareTwo) {
+    return new Expression<>("<=", literal(compareOne), literal(compareTwo));
+  }
+
+  /**
+   * Returns true if the first input is less than or equal to the second, false otherwise.
+   *
+   * @param compareOne the first string
+   * @param compareTwo the second string
+   * @return expression
+   */
+  public static Expression<Boolean> lte(String compareOne, String compareTwo) {
+    return new Expression<>("<=", literal(compareOne), literal(compareTwo));
   }
 
   /**
@@ -409,11 +455,11 @@ public class Expression {
    * the result is `false` and no further input expressions are evaluated.
    * </p>
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression all(Object... expressions) {
-    return new Expression("all", expressions);
+  public static Expression<Boolean> all(Expression<Boolean>... input) {
+    return new Expression<>("all", input);
   }
 
   /**
@@ -424,41 +470,41 @@ public class Expression {
    * the result is `true` and no further input expressions are evaluated.
    * </p>
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression any(Object... expressions) {
-    return new Expression("any", expressions);
+  public static Expression<Boolean> any(Expression<Boolean>... input) {
+    return new Expression<>("any", input);
   }
 
   /**
    * Logical negation. Returns `true` if the input is `false`, and `false` if the input is `true`.
    *
-   * @param expression varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression not(Expression expression) {
-    return new Expression("!", expression);
+  public static Expression<Boolean> not(Expression<Boolean> input) {
+    return new Expression<>("!", input);
   }
 
   /**
    * Logical negation. Returns `true` if the input is `false`, and `false` if the input is `true`.
    *
-   * @param bool the boolean to logical negate
+   * @param input boolean input
    * @return expression
    */
-  public static Expression not(Boolean bool) {
-    return new Expression("!", bool);
+  public static Expression<Boolean> not(Boolean input) {
+    return not(literal(input));
   }
 
   /**
    * Selects the first output whose corresponding test condition evaluates to true.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression switchCase(Object... expressions) {
-    return new Expression("case", expressions);
+  public static Expression switchCase(Expression<Boolean>... input) {
+    return new Expression("case", input);
   }
 
   /**
@@ -466,21 +512,38 @@ public class Expression {
    * The `input` can be any string or number expression.
    * Each label can either be a single literal value or an array of values.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression match(Object... expressions) {
-    return new Expression("match", expressions);
+  public static Expression match(Expression... input) {
+    return new Expression("match", input);
+  }
+
+  /**
+   * Selects the output whose label value matches the input value, or the fallback value if no match is found.
+   * The `input` can be any string or number expression.
+   * Each label can either be a single literal value or an array of values.
+   *
+   * @param input expression input
+   * @return expression
+   */
+  public static Expression match(Expression input, Stop... stops) {
+    Expression[] expressions = new Expression[stops.length * 2];
+    for (int i = 0; i < stops.length; i++) {
+      expressions[i * 2] = literal(stops[i].value);
+      expressions[i * 2 + 1] = literal(stops[i].output);
+    }
+    return match(join(new Expression[] {input}, expressions));
   }
 
   /**
    * Evaluates each expression in turn until the first non-null value is obtained, and returns that value.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression coalesce(Object... expressions) {
-    return new Expression("coalesce", expressions);
+  public static Expression coalesce(Expression... input) {
+    return new Expression("coalesce", input);
   }
 
   //
@@ -490,7 +553,7 @@ public class Expression {
   /**
    * Gets the feature properties object.
    * <p>
-   * Note that in some cases, it may be more efficient to use {@link #get(String)} instead.
+   * Note that in some cases, it may be more efficient to use {@link #get(Expression)}} instead.
    * </p>
    *
    * @return expression
@@ -504,8 +567,8 @@ public class Expression {
    *
    * @return expression
    */
-  public static Expression geometryType() {
-    return new Expression("geometry-type");
+  public static Expression<String> geometryType() {
+    return new Expression<>("geometry-type");
   }
 
   /**
@@ -513,8 +576,8 @@ public class Expression {
    *
    * @return expression
    */
-  public static Expression id() {
-    return new Expression("id");
+  public static Expression<Number> id() {
+    return new Expression<>("id");
   }
 
   //
@@ -528,8 +591,8 @@ public class Expression {
    *
    * @return expression
    */
-  public static Expression heatmapDensity() {
-    return new Expression("heatmap-density");
+  public static Expression<Number> heatmapDensity() {
+    return new Expression<>("heatmap-density");
   }
 
   //
@@ -540,22 +603,23 @@ public class Expression {
   /**
    * Retrieves an item from an array.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param number     the index expression
+   * @param expression the array expression
    * @return expression
    */
-  public static Expression at(Object... expressions) {
-    return new Expression("at", expressions);
+  public static Expression<Object> at(Expression<Number> number, Expression expression) {
+    return new Expression<>("at", number, expression);
   }
 
   /**
    * Retrieves an item from an array.
    *
-   * @param number     the index
+   * @param number     the index expression
    * @param expression the array expression
    * @return expression
    */
-  public static Expression at(Number number, Expression expression) {
-    return new Expression("at", number, expression);
+  public static Expression<Object> at(Number number, Expression expression) {
+    return at(literal(number), expression);
   }
 
   /**
@@ -563,22 +627,23 @@ public class Expression {
    * or from another object if a second argument is provided.
    * Returns null if the requested property is missing.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression get(Object... expressions) {
-    return new Expression("get", expressions);
+  public static Expression get(Expression<String> input) {
+    return new Expression<>("get", input);
   }
 
   /**
-   * Retrieves a property value from the current feature's properties.
+   * Retrieves a property value from the current feature's properties,
+   * or from another object if a second argument is provided.
    * Returns null if the requested property is missing.
    *
-   * @param key the property value key
+   * @param input string input
    * @return expression
    */
-  public static Expression get(String key) {
-    return new Expression("get", key);
+  public static Expression get(String input) {
+    return get(literal(input));
   }
 
   /**
@@ -589,19 +654,31 @@ public class Expression {
    * @param object an expression object
    * @return expression
    */
-  public static Expression get(String key, Expression object) {
-    return new Expression("get", key, object);
+  public static Expression<Object> get(Expression<String> key, Expression<Object> object) {
+    return new Expression<>("get", key, object);
   }
 
   /**
-   * Tests for the presence of an property value in the current feature's properties,
-   * or from another object if a second argument is provided.
+   * Retrieves a property value from another object.
+   * Returns null if the requested property is missing.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param key    a property value key
+   * @param object an expression object
    * @return expression
    */
-  public static Expression has(Object... expressions) {
-    return new Expression("has", expressions);
+  public static Expression<Object> get(String key, Expression<Object> object) {
+    return get(literal(key), object);
+  }
+
+
+  /**
+   * Tests for the presence of an property value in the current feature's properties.
+   *
+   * @param key the expression property value key
+   * @return expression
+   */
+  public static Expression<Boolean> has(Expression<String> key) {
+    return new Expression<>("has", key);
   }
 
   /**
@@ -610,8 +687,19 @@ public class Expression {
    * @param key the property value key
    * @return expression
    */
-  public static Expression has(String key) {
-    return new Expression("has", key);
+  public static Expression<Boolean> has(String key) {
+    return has(literal(key));
+  }
+
+  /**
+   * Tests for the presence of an property value from another object.
+   *
+   * @param key    the expression property value key
+   * @param object an expression object
+   * @return expression
+   */
+  public static Expression<Boolean> has(Expression<String> key, Expression<Object> object) {
+    return new Expression<>("has", key, object);
   }
 
   /**
@@ -621,8 +709,8 @@ public class Expression {
    * @param object an expression object
    * @return expression
    */
-  public static Expression has(String key, Expression object) {
-    return new Expression("has", key, object);
+  public static Expression<Boolean> has(String key, Expression<Object> object) {
+    return has(literal(key), object);
   }
 
   /**
@@ -631,18 +719,18 @@ public class Expression {
    * @param expression an expression object or expression string
    * @return expression
    */
-  public static Expression length(Expression expression) {
-    return new Expression("length", expression);
+  public static Expression<Number> length(Expression expression) {
+    return new Expression<>("length", expression);
   }
 
   /**
    * Gets the length of an array or string.
    *
-   * @param string a string to get length from
+   * @param input a string
    * @return expression
    */
-  public static Expression length(String string) {
-    return new Expression("length", string);
+  public static Expression<Number> length(String input) {
+    return length(literal(input));
   }
 
   //
@@ -654,8 +742,8 @@ public class Expression {
    *
    * @return expression
    */
-  public static Expression ln2() {
-    return new Expression("ln2");
+  public static Expression<Number> ln2() {
+    return new Expression<>("ln2");
   }
 
   /**
@@ -663,8 +751,8 @@ public class Expression {
    *
    * @return expression
    */
-  public static Expression pi() {
-    return new Expression("pi");
+  public static Expression<Number> pi() {
+    return new Expression<>("pi");
   }
 
   /**
@@ -672,18 +760,8 @@ public class Expression {
    *
    * @return expression
    */
-  public static Expression e() {
-    return new Expression("e");
-  }
-
-  /**
-   * Returns the sum of the inputs.
-   *
-   * @param expressions varargs to provide expressions and values
-   * @return expression
-   */
-  public static Expression sum(Object... expressions) {
-    return new Expression("+", expressions);
+  public static Expression<Number> e() {
+    return new Expression<>("e");
   }
 
   /**
@@ -692,18 +770,23 @@ public class Expression {
    * @param numbers the numbers to calculate the sum for
    * @return expression
    */
-  public static Expression sum(Number... numbers) {
-    return new Expression("+", numbers);
+  public static Expression<Number> sum(Expression<Number>... numbers) {
+    return new Expression<>("+", numbers);
   }
 
   /**
-   * Returns the product of the inputs.
+   * Returns the sum of the inputs.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param numbers the numbers to calculate the sum for
    * @return expression
    */
-  public static Expression product(Object... expressions) {
-    return new Expression("*", expressions);
+  @SuppressWarnings("unchecked")
+  public static Expression<Number> sum(Number... numbers) {
+    Expression<Number>[] numberExpression = (Expression<Number>[]) new Expression<?>[numbers.length];
+    for (int i = 0; i < numbers.length; i++) {
+      numberExpression[i] = literal(numbers[i]);
+    }
+    return sum(numberExpression);
   }
 
   /**
@@ -712,8 +795,23 @@ public class Expression {
    * @param numbers the numbers to calculate the product for
    * @return expression
    */
-  public static Expression product(Number... numbers) {
-    return new Expression("*", numbers);
+  public static Expression<Number> product(Expression<Number>... numbers) {
+    return new Expression<>("*", numbers);
+  }
+
+  /**
+   * Returns the product of the inputs.
+   *
+   * @param numbers the numbers to calculate the product for
+   * @return expression
+   */
+  @SuppressWarnings("unchecked")
+  public static Expression<Number> product(Number... numbers) {
+    Expression<Number>[] numberExpression = (Expression<Number>[]) new Expression<?>[numbers.length];
+    for (int i = 0; i < numbers.length; i++) {
+      numberExpression[i] = literal(numbers[i]);
+    }
+    return product(numberExpression);
   }
 
   /**
@@ -722,8 +820,18 @@ public class Expression {
    * @param number the number subtract from 0
    * @return expression
    */
-  public static Expression subtract(Number number) {
-    return new Expression("-", number);
+  public static Expression<Number> subtract(Expression<Number> number) {
+    return new Expression<>("-", number);
+  }
+
+  /**
+   * Returns the result of subtracting a number from 0.
+   *
+   * @param number the number subtract from 0
+   * @return expression
+   */
+  public static Expression<Number> subtract(Number number) {
+    return subtract(literal(number));
   }
 
   /**
@@ -733,29 +841,19 @@ public class Expression {
    * @param second the second number
    * @return expression
    */
-  public static Expression subtract(Number first, Number second) {
-    return new Expression("-", first, second);
+  public static Expression<Number> subtract(Expression<Number> first, Expression<Number> second) {
+    return new Expression<>("-", first, second);
   }
 
   /**
-   * For two inputs, returns the result of subtracting the second input from the first.
-   * For a single input, returns the result of subtracting it from 0.
+   * Returns the result of subtracting the second input from the first
    *
-   * @param expressions varargs to provide expressions and values
+   * @param first  the first number
+   * @param second the second number
    * @return expression
    */
-  public static Expression subtract(Object... expressions) {
-    return new Expression("-", expressions);
-  }
-
-  /**
-   * Returns the result of floating point division of the first input by the second.
-   *
-   * @param expressions varargs to provide expressions and values
-   * @return expression
-   */
-  public static Expression division(Object... expressions) {
-    return new Expression("/", expressions);
+  public static Expression<Number> subtract(Number first, Number second) {
+    return subtract(literal(first), literal(second));
   }
 
   /**
@@ -765,18 +863,19 @@ public class Expression {
    * @param second the second number
    * @return expression
    */
-  public static Expression division(Number first, Number second) {
-    return new Expression("/", first, second);
+  public static Expression<Number> division(Expression<Number> first, Expression<Number> second) {
+    return new Expression<>("/", first, second);
   }
 
   /**
-   * Returns the remainder after integer division of the first input by the second.
+   * Returns the result of floating point division of the first input by the second.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param first  the first number
+   * @param second the second number
    * @return expression
    */
-  public static Expression mod(Object... expressions) {
-    return new Expression("%", expressions);
+  public static Expression<Number> division(Number first, Number second) {
+    return division(literal(first), literal(second));
   }
 
   /**
@@ -786,18 +885,19 @@ public class Expression {
    * @param second the second number
    * @return expression
    */
-  public static Expression mod(Number first, Number second) {
-    return new Expression("%", first, second);
+  public static Expression<Number> mod(Expression<Number> first, Expression<Number> second) {
+    return new Expression<>("%", first, second);
   }
 
   /**
-   * Returns the result of raising the first input to the power specified by the second.
+   * Returns the remainder after integer division of the first input by the second.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param first  the first number
+   * @param second the second number
    * @return expression
    */
-  public static Expression pow(Object... expressions) {
-    return new Expression("^", expressions);
+  public static Expression<Number> mod(Number first, Number second) {
+    return mod(literal(first), literal(second));
   }
 
   /**
@@ -807,18 +907,19 @@ public class Expression {
    * @param second the second number
    * @return expression
    */
-  public static Expression pow(Number first, Number second) {
-    return new Expression("^", first, second);
+  public static Expression<Number> pow(Expression<Number> first, Expression<Number> second) {
+    return new Expression<>("^", first, second);
   }
 
   /**
-   * Returns the square root of the input
+   * Returns the result of raising the first input to the power specified by the second.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param first  the first number
+   * @param second the second number
    * @return expression
    */
-  public static Expression sqrt(Object... expressions) {
-    return new Expression("sqrt", expressions);
+  public static Expression<Number> pow(Number first, Number second) {
+    return pow(literal(first), literal(second));
   }
 
   /**
@@ -827,18 +928,18 @@ public class Expression {
    * @param number the number to take the square root from
    * @return expression
    */
-  public static Expression sqrt(Number number) {
-    return new Expression("sqrt", number);
+  public static Expression<Number> sqrt(Expression<Number> number) {
+    return new Expression<>("sqrt", number);
   }
 
   /**
-   * Returns the base-ten logarithm of the input.
+   * Returns the square root of the input
    *
-   * @param expressions varargs to provide expressions and values
+   * @param number the number to take the square root from
    * @return expression
    */
-  public static Expression log10(Object... expressions) {
-    return new Expression("log10", expressions);
+  public static Expression<Number> sqrt(Number number) {
+    return sqrt(literal(number));
   }
 
   /**
@@ -847,18 +948,18 @@ public class Expression {
    * @param number the number to take base-ten logarithm from
    * @return expression
    */
-  public static Expression log10(Number number) {
-    return new Expression("log10", number);
+  public static Expression<Number> log10(Expression<Number> number) {
+    return new Expression<>("log10", number);
   }
 
   /**
-   * Returns the natural logarithm of the input.
+   * Returns the base-ten logarithm of the input.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param number the number to take base-ten logarithm from
    * @return expression
    */
-  public static Expression ln(Object... expressions) {
-    return new Expression("ln", expressions);
+  public static Expression<Number> log10(Number number) {
+    return log10(literal(number));
   }
 
   /**
@@ -867,18 +968,18 @@ public class Expression {
    * @param number the number to take natural logarithm from
    * @return expression
    */
-  public static Expression ln(Number number) {
-    return new Expression("ln", number);
+  public static Expression<Number> ln(Expression<Number> number) {
+    return new Expression<>("ln", number);
   }
 
   /**
-   * Returns the base-two logarithm of the input.
+   * Returns the natural logarithm of the input.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param number the number to take natural logarithm from
    * @return expression
    */
-  public static Expression log2(Object... expressions) {
-    return new Expression("log2", expressions);
+  public static Expression<Number> ln(Number number) {
+    return ln(literal(number));
   }
 
   /**
@@ -887,18 +988,18 @@ public class Expression {
    * @param number the number to take base-two logarithm from
    * @return expression
    */
-  public static Expression log2(Number number) {
-    return new Expression("log2", number);
+  public static Expression<Number> log2(Expression<Number> number) {
+    return new Expression<>("log2", number);
   }
 
   /**
-   * Returns the sine of the input.
+   * Returns the base-two logarithm of the input.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param number the number to take base-two logarithm from
    * @return expression
    */
-  public static Expression sin(Object... expressions) {
-    return new Expression("sin", expressions);
+  public static Expression<Number> log2(Number number) {
+    return log2(literal(number));
   }
 
   /**
@@ -907,18 +1008,18 @@ public class Expression {
    * @param number the number to calculate the sine for
    * @return expression
    */
-  public static Expression sin(Number number) {
-    return new Expression("sin", number);
+  public static Expression<Number> sin(Expression<Number> number) {
+    return new Expression<>("sin", number);
   }
 
   /**
-   * Returns the cosine of the input.
+   * Returns the sine of the input.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param number the number to calculate the sine for
    * @return expression
    */
-  public static Expression cos(Object... expressions) {
-    return new Expression("cos", expressions);
+  public static Expression<Number> sin(Number number) {
+    return sin(literal(number));
   }
 
   /**
@@ -927,18 +1028,18 @@ public class Expression {
    * @param number the number to calculate the cosine for
    * @return expression
    */
-  public static Expression cos(Number number) {
-    return new Expression("cos", number);
+  public static Expression<Number> cos(Expression<Number> number) {
+    return new Expression<>("cos", number);
   }
 
   /**
-   * Returns the tangent of the input.
+   * Returns the cosine of the input.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param number the number to calculate the cosine for
    * @return expression
    */
-  public static Expression tan(Object... expressions) {
-    return new Expression("tan", expressions);
+  public static Expression<Number> cos(Number number) {
+    return new Expression<>("cos", literal(number));
   }
 
   /**
@@ -947,18 +1048,18 @@ public class Expression {
    * @param number the number to calculate the tangent for
    * @return expression
    */
-  public static Expression tan(Number number) {
-    return new Expression("tan", number);
+  public static Expression<Number> tan(Expression<Number> number) {
+    return new Expression<>("tan", number);
   }
 
   /**
-   * Returns the arcsine of the input.
+   * Returns the tangent of the input.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param number the number to calculate the tangent for
    * @return expression
    */
-  public static Expression asin(Object... expressions) {
-    return new Expression("asin", expressions);
+  public static Expression<Number> tan(Number number) {
+    return new Expression<>("tan", literal(number));
   }
 
   /**
@@ -967,18 +1068,18 @@ public class Expression {
    * @param number the number to calculate the arcsine for
    * @return expression
    */
-  public static Expression asin(Number number) {
-    return new Expression("asin", number);
+  public static Expression<Number> asin(Expression<Number> number) {
+    return new Expression<>("asin", number);
   }
 
   /**
-   * Returns the arccosine of the input.
+   * Returns the arcsine of the input.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param number the number to calculate the arcsine for
    * @return expression
    */
-  public static Expression acos(Object... expressions) {
-    return new Expression("acos", expressions);
+  public static Expression<Number> asin(Number number) {
+    return asin(literal(number));
   }
 
   /**
@@ -987,18 +1088,18 @@ public class Expression {
    * @param number the number to calculate the arccosine for
    * @return expression
    */
-  public static Expression acos(Number number) {
-    return new Expression("acos", number);
+  public static Expression<Number> acos(Expression<Number> number) {
+    return new Expression<>("acos", number);
   }
 
   /**
-   * Returns the arctangent of the input.
+   * Returns the arccosine of the input.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param number the number to calculate the arccosine for
    * @return expression
    */
-  public static Expression atan(Object... expressions) {
-    return new Expression("atan", expressions);
+  public static Expression<Number> acos(Number number) {
+    return acos(literal(number));
   }
 
   /**
@@ -1007,18 +1108,18 @@ public class Expression {
    * @param number the number to calculate the arctangent for
    * @return expression
    */
-  public static Expression atan(Number number) {
+  public static Expression<Number> atan(Expression<Number> number) {
     return new Expression("atan", number);
   }
 
   /**
-   * Returns the minimum value of the inputs.
+   * Returns the arctangent of the input.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param number the number to calculate the arctangent for
    * @return expression
    */
-  public static Expression min(Object... expressions) {
-    return new Expression("min", expressions);
+  public static Expression<Number> atan(Number number) {
+    return atan(literal(number));
   }
 
   /**
@@ -1027,18 +1128,23 @@ public class Expression {
    * @param numbers varargs of numbers to get the minimum from
    * @return expression
    */
-  public static Expression min(Number... numbers) {
-    return new Expression("min", numbers);
+  public static Expression<Number> min(Expression<Number>... numbers) {
+    return new Expression<>("min", numbers);
   }
 
   /**
-   * Returns the maximum value of the inputs.
+   * Returns the minimum value of the inputs.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param numbers varargs of numbers to get the minimum from
    * @return expression
    */
-  public static Expression max(Object... expressions) {
-    return new Expression("max", expressions);
+  @SuppressWarnings("unchecked")
+  public static Expression<Number> min(Number... numbers) {
+    Expression<Number>[] numberExpression = (Expression<Number>[]) new Expression<?>[numbers.length];
+    for (int i = 0; i < numbers.length; i++) {
+      numberExpression[i] = literal(numbers[i]);
+    }
+    return min(numberExpression);
   }
 
   /**
@@ -1047,27 +1153,28 @@ public class Expression {
    * @param numbers varargs of numbers to get the maximum from
    * @return expression
    */
-  public static Expression max(Number... numbers) {
-    return new Expression("max", numbers);
+  public static Expression<Number> max(Expression<Number>... numbers) {
+    return new Expression<>("max", numbers);
+  }
+
+  /**
+   * Returns the maximum value of the inputs.
+   *
+   * @param numbers varargs of numbers to get the maximum from
+   * @return expression
+   */
+  @SuppressWarnings("unchecked")
+  public static Expression<Number> max(Number... numbers) {
+    Expression<Number>[] numberExpression = (Expression<Number>[]) new Expression<?>[numbers.length];
+    for (int i = 0; i < numbers.length; i++) {
+      numberExpression[i] = literal(numbers[i]);
+    }
+    return max(numberExpression);
   }
 
   //
   // String
   //
-
-  /**
-   * Returns the input string converted to uppercase.
-   * <p>
-   * Follows the Unicode Default Case Conversion algorithm and
-   * the locale-insensitive case mappings in the Unicode Character Database.
-   * </p>
-   *
-   * @param expressions varargs to provide expressions and values
-   * @return expression
-   */
-  public static Expression upcase(Object... expressions) {
-    return new Expression("upcase", expressions);
-  }
 
   /**
    * Returns the input string converted to uppercase.
@@ -1079,8 +1186,22 @@ public class Expression {
    * @param string the string to upcase
    * @return expression
    */
-  public static Expression upcase(String string) {
-    return new Expression("upcase", string);
+  public static Expression<String> upcase(Expression<String> string) {
+    return new Expression<>("upcase", string);
+  }
+
+  /**
+   * Returns the input string converted to uppercase.
+   * <p>
+   * Follows the Unicode Default Case Conversion algorithm
+   * and the locale-insensitive case mappings in the Unicode Character Database.
+   * </p>
+   *
+   * @param string string to upcase
+   * @return expression
+   */
+  public static Expression<String> upcase(String string) {
+    return upcase(literal(string));
   }
 
   /**
@@ -1090,11 +1211,11 @@ public class Expression {
    * and the locale-insensitive case mappings in the Unicode Character Database.
    * </p>
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression downcase(Object... expressions) {
-    return new Expression("downcase", expressions);
+  public static Expression<String> downcase(Expression<String> input) {
+    return new Expression<>("downcase", input);
   }
 
   /**
@@ -1104,31 +1225,36 @@ public class Expression {
    * and the locale-insensitive case mappings in the Unicode Character Database.
    * </p>
    *
-   * @param string the string to downcase
+   * @param input string to downcase
    * @return expression
    */
-  public static Expression downcase(String string) {
-    return new Expression("downcase", string);
+  public static Expression<String> downcase(String input) {
+    return downcase(literal(input));
   }
 
   /**
    * Returns a string consisting of the concatenation of the inputs.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression concat(Object... expressions) {
-    return new Expression("concat", expressions);
+  public static Expression<String> concat(Expression<String>... input) {
+    return new Expression<>("concat", input);
   }
 
   /**
    * Returns a string consisting of the concatenation of the inputs.
    *
-   * @param strings varargs of strings to concatenate
+   * @param input expression input
    * @return expression
    */
-  public static Expression concat(String... strings) {
-    return new Expression("concat", strings);
+  @SuppressWarnings("unchecked")
+  public static Expression<String> concat(String... input) {
+    Expression<String>[] stringExpression = (Expression<String>[]) new Expression<?>[input.length];
+    for (int i = 0; i < input.length; i++) {
+      stringExpression[i] = literal(input[i]);
+    }
+    return concat(stringExpression);
   }
 
   //
@@ -1136,35 +1262,25 @@ public class Expression {
   //
 
   /**
-   * Provides a literal array or object value.
-   *
-   * @param expressions varargs to provide expressions and values
-   * @return expression
-   */
-  public static Expression literal(Object... expressions) {
-    return new Expression("literal", expressions);
-  }
-
-  /**
    * Asserts that the input is an array (optionally with a specific item type and length).
    * If, when the input expression is evaluated, it is not of the asserted type,
    * then this assertion will cause the whole expression to be aborted.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression array(Object... expressions) {
-    return new Expression("array", expressions);
+  public static Expression<Boolean> array(Expression input) {
+    return new Expression<>("array", input);
   }
 
   /**
    * Returns a string describing the type of the given value.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression typeOf(Object... expressions) {
-    return new Expression("typeof", expressions);
+  public static Expression<String> typeOf(Expression input) {
+    return new Expression<>("typeof", input);
   }
 
   /**
@@ -1172,11 +1288,11 @@ public class Expression {
    * If multiple values are provided, each one is evaluated in order until a string value is obtained.
    * If none of the inputs are strings, the expression is an error.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression string(Object... expressions) {
-    return new Expression("string", expressions);
+  public static Expression<Boolean> string(Expression input) {
+    return new Expression<>("string", input);
   }
 
   /**
@@ -1184,11 +1300,11 @@ public class Expression {
    * If multiple values are provided, each one is evaluated in order until a number value is obtained.
    * If none of the inputs are numbers, the expression is an error.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression number(Object... expressions) {
-    return new Expression("number", expressions);
+  public static Expression<Boolean> number(Expression input) {
+    return new Expression<>("number", input);
   }
 
   /**
@@ -1196,21 +1312,21 @@ public class Expression {
    * If multiple values are provided, each one is evaluated in order until a boolean value is obtained.
    * If none of the inputs are booleans, the expression is an error.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression bool(Object... expressions) {
-    return new Expression("boolean", expressions);
+  public static Expression<Boolean> bool(Expression input) {
+    return new Expression<>("boolean", input);
   }
 
   /**
    * Asserts that the input value is an object. If it is not, the expression is an error
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression object(Object... expressions) {
-    return new Expression("object", expressions);
+  public static Expression<Boolean> object(Expression input) {
+    return new Expression<>("object", input);
   }
 
   /**
@@ -1223,11 +1339,11 @@ public class Expression {
    * Otherwise, the input is converted to a string in the format specified by the JSON.stringify in the ECMAScript
    * Language Specification.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression toString(Object... expressions) {
-    return new Expression("to-string", expressions);
+  public static Expression<String> toString(Expression input) {
+    return new Expression<>("to-string", input);
   }
 
   /**
@@ -1238,22 +1354,22 @@ public class Expression {
    * If multiple values are provided, each one is evaluated in order until the first successful conversion is obtained.
    * If none of the inputs can be converted, the expression is an error.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression toNumber(Object... expressions) {
-    return new Expression("to-number", expressions);
+  public static Expression<Number> toNumber(Expression input) {
+    return new Expression<>("to-number", input);
   }
 
   /**
    * "Converts the input value to a boolean. The result is `false` when then input is an empty string, 0, false,
    * null, or NaN; otherwise it is true.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression toBool(Object... expressions) {
-    return new Expression("to-boolean", expressions);
+  public static Expression<Boolean> toBool(Expression input) {
+    return new Expression<>("to-boolean", input);
   }
 
   /**
@@ -1261,11 +1377,11 @@ public class Expression {
    * each one is evaluated in order until the first successful conversion is obtained.
    * If none of the inputs can be converted, the expression is an error.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression toColor(Object... expressions) {
-    return new Expression("to-color", expressions);
+  public static Expression<Color> toColor(Expression input) {
+    return new Expression<>("to-color", input);
   }
 
   //
@@ -1273,14 +1389,14 @@ public class Expression {
   //
 
   /**
-   * Binds expressions to named variables,
+   * Binds input to named variables,
    * which can then be referenced in the result expression using {@link #var(String)} or {@link #var(Expression)}.
    *
-   * @param expressions varargs to provide expressions and values
+   * @param input expression input
    * @return expression
    */
-  public static Expression let(Object... expressions) {
-    return new Expression("let", expressions);
+  public static Expression let(Expression... input) {
+    return new Expression<>("let", input);
   }
 
   /**
@@ -1289,8 +1405,8 @@ public class Expression {
    * @param expression the variable naming expression that was bound with using let
    * @return expression
    */
-  public static Expression var(Expression expression) {
-    return new Expression("var", expression);
+  public static Expression<Object> var(Expression<String> expression) {
+    return new Expression<>("var", expression);
   }
 
   /**
@@ -1300,7 +1416,7 @@ public class Expression {
    * @return expression
    */
   public static Expression var(String variableName) {
-    return new Expression("var", variableName);
+    return var(literal(variableName));
   }
 
   //
@@ -1316,8 +1432,8 @@ public class Expression {
    *
    * @return expression
    */
-  public static Expression zoom() {
-    return new Expression("zoom");
+  public static Expression<Number> zoom() {
+    return new Expression<>("zoom");
   }
 
   //
@@ -1332,11 +1448,11 @@ public class Expression {
    * or the first input if the input is less than the first stop.
    *
    * @param input the input value
-   * @param stops  pair of input and output values
+   * @param stops pair of input and output values
    * @return expression
    */
-  public static Expression step(Number input, Object... stops) {
-    return new Expression("step", join(new Object[] {input}, stops));
+  public static Expression step(Number input, Expression expression, Expression... stops) {
+    return step(literal(input), expression, stops);
   }
 
   /**
@@ -1350,23 +1466,48 @@ public class Expression {
    * @param stops      pair of input and output values
    * @return expression
    */
-  public static Expression step(Expression expression, Object... stops) {
-    return new Expression("step", join(new Object[] {expression}, stops));
+  public static Expression step(Expression<Number> input, Expression expression, Expression... stops) {
+    return new Expression("step", join(new Expression[] {input, expression}, stops));
   }
 
   /**
-   * Produces continuous, smooth results by interpolating between pairs of input and output values (\"stops\").
-   * The `input` may be any numeric expression (e.g., `[\"get\", \"population\"]`).
+   * Produces discrete, stepped results by evaluating a piecewise-constant function defined by pairs of
+   * input and output values (\"stops\"). The `input` may be any numeric expression (e.g., `[\"get\", \"population\"]`).
    * Stop inputs must be numeric literals in strictly ascending order.
-   * The output type must be `number`, `array&lt;number&gt;`, or `color`.
+   * Returns the output value of the stop just less than the input,
+   * or the first input if the input is less than the first stop.
    *
-   * @param interpolation type of interpolation
-   * @param input        the input number
-   * @param stops         pair of input and output values
+   * @param input the input value
+   * @param stops pair of input and output values
    * @return expression
    */
-  public static Expression interpolate(Expression interpolation, Number input, Object... stops) {
-    return new Expression("interpolate", join(new Object[] {interpolation}, join(new Object[] {input}, stops)));
+  public static Expression step(Number input, Expression expression, Stop... stops) {
+    Expression[] expressions = new Expression[stops.length * 2];
+    for (int i = 0; i < stops.length; i++) {
+      expressions[i * 2] = literal(stops[i].value);
+      expressions[i * 2 + 1] = literal(stops[i].output);
+    }
+    return step(literal(input), expression, expressions);
+  }
+
+  /**
+   * Produces discrete, stepped results by evaluating a piecewise-constant function defined by pairs of
+   * input and output values (\"stops\"). The `input` may be any numeric expression (e.g., `[\"get\", \"population\"]`).
+   * Stop inputs must be numeric literals in strictly ascending order.
+   * Returns the output value of the stop just less than the input,
+   * or the first input if the input is less than the first stop.
+   *
+   * @param input the input value
+   * @param stops pair of input and output values
+   * @return expression
+   */
+  public static Expression step(Expression<Number> input, Expression expression, Stop... stops) {
+    Expression[] expressions = new Expression[stops.length * 2];
+    for (int i = 0; i < stops.length; i++) {
+      expressions[i * 2] = literal(stops[i].value);
+      expressions[i * 2 + 1] = literal(stops[i].output);
+    }
+    return step(input, expression, expressions);
   }
 
   /**
@@ -1380,8 +1521,28 @@ public class Expression {
    * @param stops         pair of input and output values
    * @return expression
    */
-  public static Expression interpolate(Expression interpolation, Expression number, Object... stops) {
-    return new Expression("interpolate", join(new Object[] {interpolation, number}, stops));
+  public static Expression interpolate(Expression<Interpolator> interpolation, Expression<Number> number, Expression... stops) {
+    return new Expression("interpolate", join(new Expression[] {interpolation, number}, stops));
+  }
+
+  /**
+   * Produces continuous, smooth results by interpolating between pairs of input and output values (\"stops\").
+   * The `input` may be any numeric expression (e.g., `[\"get\", \"population\"]`).
+   * Stop inputs must be numeric literals in strictly ascending order.
+   * The output type must be `number`, `array&lt;number&gt;`, or `color`.
+   *
+   * @param interpolation type of interpolation
+   * @param number        the input expression
+   * @param stops         pair of input and output values
+   * @return expression
+   */
+  public static Expression interpolate(Expression<Interpolator> interpolation, Expression<Number> number, Stop... stops) {
+    Expression[] expressions = new Expression[stops.length * 2];
+    for (int i = 0; i < stops.length; i++) {
+      expressions[i * 2] = literal(stops[i].value);
+      expressions[i * 2 + 1] = literal(stops[i].output);
+    }
+    return interpolate(interpolation, number, expressions);
   }
 
   /**
@@ -1389,8 +1550,8 @@ public class Expression {
    *
    * @return expression
    */
-  public static Expression linear() {
-    return new Expression("linear");
+  public static Expression<Interpolator> linear() {
+    return new Expression<>("linear");
   }
 
   /**
@@ -1402,8 +1563,8 @@ public class Expression {
    * @param base value controlling the route at which the output increases
    * @return expression
    */
-  public static Expression exponential(Number base) {
-    return new Expression("exponential", base);
+  public static Expression<Interpolator> exponential(Number base) {
+    return exponential(literal(base));
   }
 
   /**
@@ -1415,8 +1576,8 @@ public class Expression {
    * @param expression base number expression
    * @return expression
    */
-  public static Expression exponential(Expression expression) {
-    return new Expression("exponential", expression);
+  public static Expression<Interpolator> exponential(Expression<Number> expression) {
+    return new Expression<>("exponential", expression);
   }
 
   /**
@@ -1428,35 +1589,90 @@ public class Expression {
    * @param y2 y value fo the second point of a cubic bezier, ranges from 0 to 1
    * @return expression
    */
-  public static Expression cubicBezier(Number x1, Number y1, Number x2, Number y2) {
-    return new Expression("cubic-bezier", x1, y1, x2, y2);
+  public static Expression<Interpolator> cubicBezier(Expression<Number> x1, Expression<Number> y1, Expression<Number> x2, Expression<Number> y2) {
+    return new Expression<>("cubic-bezier", x1, y1, x2, y2);
   }
 
   /**
    * Interpolates using the cubic bezier curve defined by the given control points.
    *
-   * @param expressions varags of expressions and values
+   * @param x1 x value of the first point of a cubic bezier, ranges from 0 to 1
+   * @param y1 y value of the first point of a cubic bezier, ranges from 0 to 1
+   * @param x2 x value of the second point of a cubic bezier, ranges from 0 to 1
+   * @param y2 y value fo the second point of a cubic bezier, ranges from 0 to 1
    * @return expression
    */
-  public static Expression cubicBezier(Object... expressions) {
-    return new Expression("cubic-bezier", expressions);
+  public static Expression<Interpolator> cubicBezier(Number x1, Number y1, Number x2, Number y2) {
+    return cubicBezier(literal(x1), literal(y1), literal(x2), literal(y2));
   }
 
-
-  /**
-   * Converts a int color to a String following with contents equal to rgba(red, green, blue, alpha)
-   *
-   * @param color the int color to convert
-   * @return rgba string
-   */
-  public static String color(@ColorInt int color) {
-    return PropertyFactory.colorToRgbaString(color);
+  public static Expression<Number> literal(Number number) {
+    return new ExpressionValue<>(number);
   }
 
-  private static Object[] join(Object[] a, Object[] b) {
-    Object[] output = new Object[a.length + b.length];
+  public static Expression<String> literal(String string) {
+    return new ExpressionValue<>(string);
+  }
+
+  public static Expression<Boolean> literal(Boolean bool) {
+    return new ExpressionValue<>(bool);
+  }
+
+  public static Expression<Object[]> literal(Object object) {
+    return new ExpressionValue<>(object);
+  }
+
+  public static Expression<Color> color(@ColorInt int color) {
+    return new ExpressionValue<>(PropertyFactory.colorToRgbaString(color));
+  }
+
+  public static Stop stop(Object stop, Object value) {
+    return new Stop(stop, value);
+  }
+
+  private static Expression[] join(Expression[] a, Expression[] b) {
+    Expression[] output = new Expression[a.length + b.length];
     System.arraycopy(a, 0, output, 0, a.length);
     System.arraycopy(b, 0, output, a.length, b.length);
     return output;
+  }
+
+  /**
+   * Expression interpolator type.
+   * <p>
+   * Is used for first parameter of {@link #interpolate(Expression, Expression, Stop...)}.
+   * </p>
+   */
+  private static class Interpolator {
+  }
+
+  /**
+   * Expression color type
+   */
+  public static class Color {
+  }
+
+  /**
+   * Expression array type
+   */
+  public static class Array {
+  }
+
+  /**
+   * Expression stop.
+   * <p>
+   * Can be used for {@link #stop(Object, Object)} as part of varargs parameter in
+   * {@link #step(Number, Expression, Stop...)} or {@link #interpolate(Expression, Expression, Stop...)}.
+   * </p>
+   */
+  public static class Stop {
+
+    private Object value;
+    private Object output;
+
+    public Stop(Object value, Object output) {
+      this.value = value;
+      this.output = output;
+    }
   }
 }

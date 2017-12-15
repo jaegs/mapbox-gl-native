@@ -5,7 +5,10 @@ import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.widget.TextView;
 import android.widget.Toast;
+
+import com.mapbox.mapboxsdk.camera.CameraPosition;
 import com.mapbox.mapboxsdk.camera.CameraUpdateFactory;
 import com.mapbox.mapboxsdk.geometry.LatLng;
 import com.mapbox.mapboxsdk.maps.MapView;
@@ -16,19 +19,21 @@ import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
 import com.mapbox.mapboxsdk.style.sources.Source;
 import com.mapbox.mapboxsdk.testapp.R;
 import com.mapbox.mapboxsdk.testapp.utils.ResourceUtils;
-import timber.log.Timber;
 
 import java.io.IOException;
+
+import timber.log.Timber;
 
 import static com.mapbox.mapboxsdk.style.expressions.Expression.color;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.exponential;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.get;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.interpolate;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.linear;
+import static com.mapbox.mapboxsdk.style.expressions.Expression.literal;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.match;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.step;
+import static com.mapbox.mapboxsdk.style.expressions.Expression.stop;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.zoom;
-
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillAntialias;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillColor;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillOpacity;
@@ -62,11 +67,25 @@ public class DataDrivenStyleActivity extends AppCompatActivity {
         // Add a parks layer
         addParksLayer();
 
+        // Add debug overlay
+        setupDebugZoomView();
+
         // Center and Zoom (Amsterdam, zoomed to streets)
         mapboxMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(52.379189, 4.899431), 14));
       }
     });
   }
+
+  private void setupDebugZoomView(){
+    final TextView textView = (TextView) findViewById(R.id.textZoom);
+    mapboxMap.setOnCameraChangeListener(new MapboxMap.OnCameraChangeListener() {
+      @Override
+      public void onCameraChange(CameraPosition position) {
+        textView.setText(String.format(getString(R.string.debug_zoom), position.zoom));
+      }
+    });
+  }
+
 
   @Override
   public boolean onCreateOptionsMenu(Menu menu) {
@@ -160,9 +179,9 @@ public class DataDrivenStyleActivity extends AppCompatActivity {
       fillColor(
         interpolate(
           exponential(0.5f), zoom(),
-          1, color(Color.RED),
-          5, color(Color.BLUE),
-          10, color(Color.GREEN)
+          stop(1, color(Color.RED)),
+          stop(5, color(Color.BLUE)),
+          stop(10, color(Color.GREEN))
         )
       )
     );
@@ -191,9 +210,10 @@ public class DataDrivenStyleActivity extends AppCompatActivity {
       fillColor(
         step(zoom(),
           color(Color.CYAN),
-          1, color(Color.RED),
-          5, color(Color.BLUE),
-          10, color(Color.GREEN))
+          stop(1, color(Color.RED)),
+          stop(5, color(Color.BLUE)),
+          stop(10, color(Color.GREEN))
+        )
       )
     );
 
@@ -222,9 +242,9 @@ public class DataDrivenStyleActivity extends AppCompatActivity {
         interpolate(
           exponential(0.5f),
           get("stroke-width"),
-          1f, color(Color.RED),
-          5f, color(Color.BLUE),
-          10f, color(Color.GREEN)
+          stop(1f, color(Color.RED)),
+          stop(5f, color(Color.BLUE)),
+          stop(10f, color(Color.GREEN))
         )
       )
     );
@@ -254,9 +274,9 @@ public class DataDrivenStyleActivity extends AppCompatActivity {
       fillColor(
         match(
           get("name"),
-          "Westerpark", color(Color.RED),
-          "Jordaan", color(Color.BLUE),
-          "Prinseneiland", color(Color.GREEN),
+          literal("Westerpark"), color(Color.RED),
+          literal("Jordaan"), color(Color.BLUE),
+          literal("Prinseneiland"), color(Color.GREEN),
           color(Color.CYAN)
         )
       )
@@ -310,9 +330,9 @@ public class DataDrivenStyleActivity extends AppCompatActivity {
         step(
           get("stroke-width"),
           color(Color.CYAN),
-          1f, color(Color.RED),
-          2f, color(Color.BLUE),
-          3f, color(Color.GREEN)
+          stop(1f, color(Color.RED)),
+          stop(2f, color(Color.BLUE)),
+          stop(3f, color(Color.GREEN))
         )
       )
     );
@@ -342,26 +362,26 @@ public class DataDrivenStyleActivity extends AppCompatActivity {
         interpolate(
           exponential(1f),
           zoom(),
-          12, step(
+          stop(12, step(
             get("stroke-width"),
             color(Color.BLACK),
-            1f, color(Color.RED),
-            2f, color(Color.WHITE),
-            3f, color(Color.BLUE)
-          ),
-          15, step(
+            stop(1f, color(Color.RED)),
+            stop(2f, color(Color.WHITE)),
+            stop(3f, color(Color.BLUE))
+          )),
+          stop(15, step(
             get("stroke-width"),
             color(Color.BLACK),
-            1f, color(Color.YELLOW),
-            2f, color(Color.LTGRAY),
-            3f, color(Color.CYAN)
-          ),
-          18, step(
+            stop(1f, color(Color.YELLOW)),
+            stop(2f, color(Color.LTGRAY)),
+            stop(3f, color(Color.CYAN))
+          )),
+          stop(18, step(
             get("stroke-width"),
             color(Color.BLACK),
-            1f, color(Color.WHITE),
-            2f, color(Color.GRAY),
-            3f, color(Color.GREEN)
+            stop(1f, color(Color.WHITE)),
+            stop(2f, color(Color.GRAY)),
+            stop(3f, color(Color.GREEN)))
           )
         )
       )
@@ -396,27 +416,27 @@ public class DataDrivenStyleActivity extends AppCompatActivity {
         interpolate(
           linear(),
           zoom(),
-          12, step(
+          stop(12, step(
             get("stroke-width"),
             color(Color.BLACK),
-            1f, color(Color.RED),
-            2f, color(Color.WHITE),
-            3f, color(Color.BLUE)
-          ),
-          15, step(
+            stop(1f, color(Color.RED)),
+            stop(2f, color(Color.WHITE)),
+            stop(3f, color(Color.BLUE))
+          )),
+          stop(15, step(
             get("stroke-width"),
             color(Color.BLACK),
-            1f, color(Color.YELLOW),
-            2f, color(Color.LTGRAY),
-            3f, color(Color.CYAN)
-          ),
-          18, step(
+            stop(1f, color(Color.YELLOW)),
+            stop(2f, color(Color.LTGRAY)),
+            stop(3f, color(Color.CYAN))
+          )),
+          stop(18, step(
             get("stroke-width"),
             color(Color.BLACK),
-            1f, color(Color.WHITE),
-            2f, color(Color.GRAY),
-            3f, color(Color.GREEN)
-          )
+            stop(1f, color(Color.WHITE)),
+            stop(2f, color(Color.GRAY)),
+            stop(3f, color(Color.GREEN))
+          ))
         )
       )
     );
@@ -448,89 +468,89 @@ public class DataDrivenStyleActivity extends AppCompatActivity {
       fillColor(
         step(zoom(),
           color(Color.BLACK),
-          7f, match(
+          stop(7f, match(
             get("name"),
-            "Westerpark", color(Color.RED),
+            literal("Westerpark"), color(Color.RED),
             color(Color.BLACK)
-          ),
-          8f, match(
+          )),
+          stop(8f, match(
             get("name"),
-            "Westerpark", color(Color.BLUE),
+            literal("Westerpark"), color(Color.BLUE),
             color(Color.BLACK)
-          ),
-          9f, match(
+          )),
+          stop(9f, match(
             get("name"),
-            "Westerpark", color(Color.RED),
+            literal("Westerpark"), color(Color.RED),
             color(Color.BLACK)
-          ),
-          10f, match(
+          )),
+          stop(10f, match(
             get("name"),
-            "Westerpark", color(Color.BLUE),
+            literal("Westerpark"), color(Color.BLUE),
             color(Color.BLACK)
-          ),
-          11f, match(
+          )),
+          stop(11f, match(
             get("name"),
-            "Westerpark", color(Color.RED),
+            literal("Westerpark"), color(Color.RED),
             color(Color.BLACK)
-          ),
-          12f, match(
+          )),
+          stop(12f, match(
             get("name"),
-            "Westerpark", color(Color.BLUE),
+            literal("Westerpark"), color(Color.BLUE),
             color(Color.BLACK)
-          ),
-          13f, match(
+          )),
+          stop(13f, match(
             get("name"),
-            "Westerpark", color(Color.RED),
+            literal("Westerpark"), color(Color.RED),
             color(Color.BLACK)
-          ),
-          14f, match(
+          )),
+          stop(14f, match(
             get("name"),
-            "Westerpark", color(Color.BLUE),
-            "Jordaan", color(Color.GREEN),
-            "PrinsenEiland", color(Color.WHITE),
+            literal("Westerpark"), color(Color.BLUE),
+            literal("Jordaan"), color(Color.GREEN),
+            literal("PrinsenEiland"), color(Color.WHITE),
             color(Color.BLACK)
-          ),
-          15f, match(
+          )),
+          stop(15f, match(
             get("name"),
-            "Westerpark", color(Color.RED),
+            literal("Westerpark"), color(Color.RED),
             color(Color.BLACK)
-          ),
-          16f, match(
+          )),
+          stop(16f, match(
             get("name"),
-            "Westerpark", color(Color.BLUE),
+            literal("Westerpark"), color(Color.BLUE),
             color(Color.BLACK)
-          ),
-          17f, match(
+          )),
+          stop(17f, match(
             get("name"),
-            "Westerpark", color(Color.RED),
+            literal("Westerpark"), color(Color.RED),
             color(Color.BLACK)
-          ),
-          18f, match(
+          )),
+          stop(18f, match(
             get("name"),
-            "Westerpark", color(Color.BLUE),
-            "Jordaan", color(Color.CYAN),
+            literal("Westerpark"), color(Color.BLUE),
+            literal("Jordaan"), color(Color.CYAN),
             color(Color.BLACK)
-          ),
-          19f, match(
+          )),
+          stop(19f, match(
             get("name"),
-            "Westerpark", color(Color.RED),
+            literal("Westerpark"), color(Color.RED),
             color(Color.BLACK)
-          ),
-          20f, match(
+          )),
+          stop(20f, match(
             get("name"),
-            "Westerpark", color(Color.BLUE),
+            literal("Westerpark"), color(Color.BLUE),
             color(Color.BLACK)
-          ),
-          21f, match(
+          )),
+          stop(21f, match(
             get("name"),
-            "Westerpark", color(Color.RED),
+            literal("Westerpark"), color(Color.RED),
             color(Color.BLACK)
-          ),
-          20f, match(
+          )),
+          stop(22f, match(
             get("name"),
-            "Westerpark", color(Color.BLUE),
+            literal("Westerpark"), color(Color.BLUE),
             color(Color.BLACK)
-          )
+          ))
         )
       )
     );
@@ -581,7 +601,6 @@ public class DataDrivenStyleActivity extends AppCompatActivity {
         Toast.LENGTH_SHORT).show();
       return;
     }
-
 
     // Add a fill layer
     mapboxMap.addLayer(new FillLayer(AMSTERDAM_PARKS_LAYER, source.getId())

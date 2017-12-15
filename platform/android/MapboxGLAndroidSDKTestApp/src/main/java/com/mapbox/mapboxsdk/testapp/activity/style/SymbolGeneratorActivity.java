@@ -43,6 +43,7 @@ import static com.mapbox.mapboxsdk.style.expressions.Expression.concat;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.division;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.downcase;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.get;
+import static com.mapbox.mapboxsdk.style.expressions.Expression.literal;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.pi;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.product;
 import static com.mapbox.mapboxsdk.style.expressions.Expression.upcase;
@@ -248,10 +249,10 @@ public class SymbolGeneratorActivity extends AppCompatActivity implements OnMapR
       .withProperties(
 
         // icon configuration
-        iconImage(get(FEATURE_ID)),
+        iconImage(get(literal(FEATURE_ID))),
         iconAllowOverlap(false),
         iconSize(
-          division(get(FEATURE_RANK), 2)
+          division(get(literal(FEATURE_RANK)), literal(2))
         ),
         iconAnchor(ICON_ANCHOR_BOTTOM),
         iconOffset(new Float[] {0.0f, -5.0f}),
@@ -259,14 +260,14 @@ public class SymbolGeneratorActivity extends AppCompatActivity implements OnMapR
         // text field configuration
         textField(
           concat(
-            upcase("a "),
-            get(FEATURE_TYPE),
-            downcase(" IN "),
-            get(FEATURE_REGION)
+            upcase(literal("a ")),
+            get(literal(FEATURE_TYPE)),
+            downcase(literal(" IN ")),
+            get(literal(FEATURE_REGION))
           )
         ),
         textSize(
-          product(get(FEATURE_RANK), pi())
+          product(get(literal(FEATURE_RANK)), pi())
         ),
         textAnchor(TEXT_ANCHOR_TOP)
       )
